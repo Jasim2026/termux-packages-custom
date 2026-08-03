@@ -1,0 +1,27 @@
+name: Build Custom X11 Bootstrap
+
+on:
+  workflow_dispatch: # Allows manual trigger from GitHub UI
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3 tar zip wget curl jq
+
+      - name: Generate Bootstrap
+        run: |
+          # Run the bootstrap generator for 64-bit ARM (aarch64)
+          bash scripts/generate-bootstrap.sh --architecture aarch64
+
+      - name: Upload Bootstrap Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: custom-bootstrap-aarch64
+          path: bootstrap-aarch64.zip
