@@ -1,11 +1,10 @@
-name: Generate bootstrap archives (android-7)
+name: Generate custom bootstrap archives
 
 on:
-  schedule:
-    - cron: "0 0 * * 0"
   workflow_dispatch:
 
-permissions: {} # none
+permissions:
+  contents: write # Needed to create GitHub Releases
 
 concurrency:
   group: ${{ github.workflow }}
@@ -14,58 +13,82 @@ concurrency:
 jobs:
   build:
     permissions:
-      contents: read # actions/upload-artifact doesn't need contents: write
-    runs-on: ubuntu-slim
+      contents: read
+    runs-on: ubuntu-latest
     strategy:
       matrix:
         arch:
           - aarch64
-          - arm
-          - i686
-          - x86_64
-    if: github.repository == 'termux/termux-packages'
     steps:
       - name: Git clone
         uses: actions/checkout@v7
-      - name: Create bootstrap archive
-        run: ./scripts/generate-bootstraps.sh --architectures ${{ matrix.arch }}
+
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3 tar zip wget curl jq
+
+      - name: Create bootstrap archive with X11
+        run: |
+          ./scripts/generate-bootstraps.sh --architectures ${{ matrix.arch }} --add x11-repo,termux-x11-nightly,openbox,xterm
+
+      - name: Inject Auto-Start Script into Bootstrap
+        run: |
+          mkdir -p temp_bootstrap
+          unzip bootstrap-${{ matrix.arch }}.zip -d temp_bootstrap
+
+          cat << 'EOF' >> temp_bootstrap/usr/etc/bash.bashrc
+
+# Auto-start X11 Display Server on Boot
+if [ -z "$DISPLAY" ] && [ -n "$TERMUX_VERSION" ]; then
+    export DISPLAY=:0
+    if ! pgrep -x "termux-x11" > /dev/null; then
+        termux-x11 :0 -ac &
+    fi
+    am start -n com.termux.x11/com.termux.x11.MainActivity > /dev/null 2>&1 || true
+    openbox &
+fi
+EOF
+
+          cd temp_bootstrap
+          zip -r ../bootstrap-${{ matrix.arch }}.zip .
+          cd ..
+          rm -rf temp_bootstrap
+
       - name: Store artifacts
         uses: actions/upload-artifact@v6
         with:
-          name: bootstrap-archives-${{ matrix.arch }}-${{ github.sha }}
+          name: bootstrap-archives-${{ matrix.arch }}
           path: "*.zip"
+
   publish:
     permissions:
-      contents: write # for git push
+      contents: write # for git push / release upload
     needs: build
-    runs-on: ubuntu-slim
+    runs-on: ubuntu-latest
     steps:
       - name: Git clone
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
+
       - name: Fetch bootstrap archives
         uses: actions/download-artifact@v7
         with:
           merge-multiple: true
           path: ./
+
       - name: Create new tag
         id: get_tag
         run: |
-          new_tag="bootstrap-$(date "+%Y.%m.%d")"
-          existing_tag_revision=$(git tag | grep "$new_tag" | sort -r | head -n 1 | cut -d- -f3 | cut -dr -f2)
-          if [ -n "$existing_tag_revision" ]; then
-            tag_rev=$((existing_tag_revision + 1))
-          else
-            tag_rev=1
-          fi
-          new_tag="${new_tag}-r${tag_rev}+apt.android-7"
+          new_tag="bootstrap-$(date "+%Y.%m.%d")-x11"
           echo "tag_name=$new_tag" >> $GITHUB_OUTPUT
+
       - name: Publish bootstrap zips to GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create ${{ steps.get_tag.outputs.tag_name }} --title "Bootstrap archives for Termux application (apt.android-7)"
+          gh release create ${{ steps.get_tag.outputs.tag_name }} --title "Custom X11 Bootstrap Archives"
           for file in *.zip; do
             gh release upload ${{ steps.get_tag.outputs.tag_name }} "$file"
           done
