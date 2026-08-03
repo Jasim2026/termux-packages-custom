@@ -26,17 +26,28 @@ jobs:
       - name: Install Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y python3 tar zip wget curl jq
+          sudo apt-get install -y python3 tar zip wget curl jq dpkg-dev
 
-      - name: Create bootstrap archive with X11
+      - name: Create bootstrap archive
         run: |
-          ./scripts/generate-bootstraps.sh --architectures ${{ matrix.arch }} --add x11-repo,termux-x11-nightly,openbox,xterm
+          # Add x11-repo (which is in termux-main repository)
+          ./scripts/generate-bootstraps.sh --architectures ${{ matrix.arch }} --add x11-repo
 
-      - name: Inject Auto-Start Script into Bootstrap
+      - name: Inject Termux-X11 & Auto-Start Script into Bootstrap
         run: |
           mkdir -p temp_bootstrap
           unzip bootstrap-${{ matrix.arch }}.zip -d temp_bootstrap
 
+          # Download latest termux-x11 package directly from official GitHub releases
+          echo "[*] Downloading termux-x11 companion package..."
+          wget -q https://github.com/termux/termux-x11/releases/download/nightly/termux-x11-nightly-all.deb -O termux-x11.deb || true
+          
+          if [ -f termux-x11.deb ]; then
+            echo "[*] Unpacking termux-x11 into bootstrap..."
+            dpkg-deb -x termux-x11.deb temp_bootstrap/
+          fi
+
+          # Inject X11 Auto-Trigger logic into bash.bashrc
           echo '# Auto-start X11 Display Server on Boot' >> temp_bootstrap/usr/etc/bash.bashrc
           echo 'if [ -z "$DISPLAY" ] && [ -n "$TERMUX_VERSION" ]; then' >> temp_bootstrap/usr/etc/bash.bashrc
           echo '    export DISPLAY=:0' >> temp_bootstrap/usr/etc/bash.bashrc
@@ -44,13 +55,13 @@ jobs:
           echo '        termux-x11 :0 -ac &' >> temp_bootstrap/usr/etc/bash.bashrc
           echo '    fi' >> temp_bootstrap/usr/etc/bash.bashrc
           echo '    am start -n com.termux.x11/com.termux.x11.MainActivity > /dev/null 2>&1 || true' >> temp_bootstrap/usr/etc/bash.bashrc
-          echo '    openbox &' >> temp_bootstrap/usr/etc/bash.bashrc
           echo 'fi' >> temp_bootstrap/usr/etc/bash.bashrc
 
+          # Re-pack the bootstrap zip
           cd temp_bootstrap
           zip -r ../bootstrap-${{ matrix.arch }}.zip .
           cd ..
-          rm -rf temp_bootstrap
+          rm -rf temp_bootstrap termux-x11.deb
 
       - name: Store artifacts
         uses: actions/upload-artifact@v4
