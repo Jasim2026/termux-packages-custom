@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write # Needed to create GitHub Releases
+  contents: write
 
 concurrency:
   group: ${{ github.workflow }}
@@ -21,7 +21,7 @@ jobs:
           - aarch64
     steps:
       - name: Git clone
-        uses: actions/checkout@v7
+        uses: actions/checkout@v4
 
       - name: Install Dependencies
         run: |
@@ -37,18 +37,15 @@ jobs:
           mkdir -p temp_bootstrap
           unzip bootstrap-${{ matrix.arch }}.zip -d temp_bootstrap
 
-          cat << 'EOF' >> temp_bootstrap/usr/etc/bash.bashrc
-
-# Auto-start X11 Display Server on Boot
-if [ -z "$DISPLAY" ] && [ -n "$TERMUX_VERSION" ]; then
-    export DISPLAY=:0
-    if ! pgrep -x "termux-x11" > /dev/null; then
-        termux-x11 :0 -ac &
-    fi
-    am start -n com.termux.x11/com.termux.x11.MainActivity > /dev/null 2>&1 || true
-    openbox &
-fi
-EOF
+          echo '# Auto-start X11 Display Server on Boot' >> temp_bootstrap/usr/etc/bash.bashrc
+          echo 'if [ -z "$DISPLAY" ] && [ -n "$TERMUX_VERSION" ]; then' >> temp_bootstrap/usr/etc/bash.bashrc
+          echo '    export DISPLAY=:0' >> temp_bootstrap/usr/etc/bash.bashrc
+          echo '    if ! pgrep -x "termux-x11" > /dev/null; then' >> temp_bootstrap/usr/etc/bash.bashrc
+          echo '        termux-x11 :0 -ac &' >> temp_bootstrap/usr/etc/bash.bashrc
+          echo '    fi' >> temp_bootstrap/usr/etc/bash.bashrc
+          echo '    am start -n com.termux.x11/com.termux.x11.MainActivity > /dev/null 2>&1 || true' >> temp_bootstrap/usr/etc/bash.bashrc
+          echo '    openbox &' >> temp_bootstrap/usr/etc/bash.bashrc
+          echo 'fi' >> temp_bootstrap/usr/etc/bash.bashrc
 
           cd temp_bootstrap
           zip -r ../bootstrap-${{ matrix.arch }}.zip .
@@ -56,24 +53,24 @@ EOF
           rm -rf temp_bootstrap
 
       - name: Store artifacts
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v4
         with:
           name: bootstrap-archives-${{ matrix.arch }}
           path: "*.zip"
 
   publish:
     permissions:
-      contents: write # for git push / release upload
+      contents: write
     needs: build
     runs-on: ubuntu-latest
     steps:
       - name: Git clone
-        uses: actions/checkout@v7
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
       - name: Fetch bootstrap archives
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v4
         with:
           merge-multiple: true
           path: ./
@@ -88,7 +85,7 @@ EOF
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create ${{ steps.get_tag.outputs.tag_name }} --title "Custom X11 Bootstrap Archives"
+          gh release create ${{ steps.get_tag.outputs.tag_name }} --title "Custom X11 Bootstrap Archives" || true
           for file in *.zip; do
-            gh release upload ${{ steps.get_tag.outputs.tag_name }} "$file"
+            gh release upload ${{ steps.get_tag.outputs.tag_name }} "$file" --clobber
           done
