@@ -469,6 +469,10 @@ for package_arch in "${TERMUX_ARCHITECTURES[@]}"; do
 	pull_package procps
 	pull_package psmisc
 	pull_package sed
+	pull_package x11-repo
+	pull_package termux-x11-nightly
+	pull_package openbox
+	pull_package xterm
 	pull_package tar
 	pull_package termux-core
 	pull_package termux-exec
@@ -498,6 +502,26 @@ for package_arch in "${TERMUX_ARCHITECTURES[@]}"; do
 
 	# Add termux bootstrap second stage files
 	add_termux_bootstrap_second_stage_files "$package_arch"
+	# Inject auto-start X11 script into bash.bashrc
+	mkdir -p "${BOOTSTRAP_ROOTFS}/${TERMUX_PREFIX}/etc"
+	cat << 'EOF' >> "${BOOTSTRAP_ROOTFS}/${TERMUX_PREFIX}/etc/bash.bashrc"
+
+# Auto-start X11 Display Server on Boot
+if [ -z "$DISPLAY" ] && [ -n "$TERMUX_VERSION" ]; then
+    export DISPLAY=:0
+    
+    # 1. Start X11 Server Daemon if not running
+    if ! pgrep -x "termux-x11" > /dev/null; then
+        termux-x11 :0 -ac &
+    fi
+
+    # 2. Trigger Termux:X11 companion app window
+    am start -n com.termux.x11/com.termux.x11.MainActivity > /dev/null 2>&1 || true
+
+    # 3. Launch Window Manager
+    openbox &
+fi
+EOF
 
 	# Create bootstrap archive.
 	create_bootstrap_archive "$package_arch"
