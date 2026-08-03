@@ -18,7 +18,7 @@ jobs:
       - name: Generate Bootstrap
         run: |
           # Run the bootstrap generator for 64-bit ARM (aarch64)
-          bash scripts/generate-bootstrap.sh --architecture aarch64
+          bash scripts/generate-bootstraps.sh --architecture aarch64
 
       - name: Upload Bootstrap Artifact
         uses: actions/upload-artifact@v4
